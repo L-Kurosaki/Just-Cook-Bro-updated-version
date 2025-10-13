@@ -1,4 +1,4 @@
-# Network Topology Project Documentation
+R# Network Topology Project Documentation
 
 **Project:** Comprehensive Network Topology Implementation  
 **Tools:** Cisco Packet Tracer 8.2+  
@@ -1412,8 +1412,8 @@ interface GigabitEthernet0/1
  ipv6 address 2001:db8:b::1/64
  no shutdown
 
-! --- Serial 0/0/0 (to R4) ---
-interface Serial0/0/0
+! --- GigabitEthernet 0/2(to R4) ---
+interface GigabitEthernet 0/2
  description ** WAN Link to R4 **
  ip address 10.0.3.1 255.255.255.252
  ipv6 address 2001:db8:c::1/64
@@ -1440,7 +1440,7 @@ interface GigabitEthernet0/0
 interface GigabitEthernet0/1
  ipv6 ospf 1 area 0
 
-interface Serial0/0/0
+interface GigabitEthernet 0/2
  ipv6 ospf 1 area 0
 
 interface Loopback0
@@ -1486,7 +1486,7 @@ interface GigabitEthernet0/1
  no shutdown
 
 ! --- Serial 0/0/0 (to R4) ---
-interface Serial0/0/0
+interface GigabitEthernet0/2
  description ** WAN Link to R4 **
  ip address 10.0.5.1 255.255.255.252
  ipv6 address 2001:db8:e::1/64
@@ -1512,7 +1512,7 @@ interface GigabitEthernet0/0
 interface GigabitEthernet0/1
  ipv6 ospf 1 area 0
 
-interface Serial0/0/0
+interface GigabitEthernet0/2
  ipv6 ospf 1 area 0
 
 interface Loopback0
@@ -1584,7 +1584,76 @@ interface GigabitEthernet0/0
 interface GigabitEthernet0/1
  ipv6 ospf 1 area 0
 
-interface Serial0/0/0
+interface 
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
+
+
+! ============================================
+! ROUTER 3 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R3
+
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 3.3.3.3 255.255.255.255
+ ipv6 address 2001:db8:3::3/128
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R1) ---
+interface GigabitEthernet0/0
+ description ** Link to R1 **
+ ip address 10.0.2.2 255.255.255.252
+ ipv6 address 2001:db8:b::2/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R2) ---
+interface GigabitEthernet0/1
+ description ** Link to R2 **
+ ip address 10.0.4.2 255.255.255.252
+ ipv6 address 2001:db8:d::2/64
+ no shutdown
+
+! --- Serial 0/0/0 (to R4) ---
+interface GigabitEthernet0/2
+ description ** WAN Link to R4 **
+ ip address 10.0.6.1 255.255.255.252
+ ipv6 address 2001:db8:f::1/64
+ clock rate 64000
+ bandwidth 64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 3.3.3.3
+ network 10.0.2.0 0.0.0.3 area 0
+ network 10.0.4.0 0.0.0.3 area 0
+ network 10.0.6.0 0.0.0.3 area 0
+ network 3.3.3.3 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 3.3.3.3
+
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/1
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/2
  ipv6 ospf 1 area 0
 
 interface Loopback0
@@ -1616,7 +1685,7 @@ interface Loopback0
  no shutdown
 
 ! --- Serial 0/0/0 (to R1) - DTE Side ---
-interface Serial0/0/0
+interface GigabitEthernet0/2
  description ** WAN Link to R1 **
  ip address 10.0.3.2 255.255.255.252
  ipv6 address 2001:db8:c::2/64
@@ -1655,7 +1724,7 @@ interface Serial0/0/0
 interface GigabitEthernet0/0
  ipv6 ospf 1 area 0
 
-interface GigabitEthernet0/1
+interface GigabitEthernet0/2
  ipv6 ospf 1 area 0
 
 interface Loopback0
