@@ -1,0 +1,66 @@
+! ============================================
+! ROUTER 4 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R4
+
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 4.4.4.4 255.255.255.255
+ ipv6 address 2001:db8:4::4/128
+ no shutdown
+
+! --- Serial 0/0/0 (to R1) - DTE Side ---
+interface GigabitEthernet0/2
+ description ** WAN Link to R1 **
+ ip address 10.0.3.2 255.255.255.252
+ ipv6 address 2001:db8:c::2/64
+ bandwidth 64
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R2) ---
+interface GigabitEthernet0/0
+ description ** Link to R2 **
+ ip address 10.0.5.2 255.255.255.252
+ ipv6 address 2001:db8:e::2/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R3) ---
+interface GigabitEthernet0/1
+ description ** Link to R3 **
+ ip address 10.0.6.2 255.255.255.252
+ ipv6 address 2001:db8:f::2/64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 4.4.4.4
+ network 10.0.3.0 0.0.0.3 area 0
+ network 10.0.5.0 0.0.0.3 area 0
+ network 10.0.6.0 0.0.0.3 area 0
+ network 4.4.4.4 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 4.4.4.4
+
+interface Serial0/0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/2
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
