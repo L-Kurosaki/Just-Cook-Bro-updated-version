@@ -1292,6 +1292,797 @@ network-topology-project/
 ```
 
 ---
+# Part II: Router Interface IP Configuration & Management
+
+## Feature Overview
+**Assigned Network Feature:** Router Interface IP Configuration
+
+This section demonstrates comprehensive router interface IP addressing, including IPv4/IPv6 dual-stack configuration, interface types, verification methods, and troubleshooting techniques using the Mesh Topology (Topology 2).
+
+---
+
+## Why Mesh Topology?
+
+The mesh topology is ideal for demonstrating router interface IPs because:
+- **4 routers** with **12 total interfaces** (6 point-to-point connections)
+- Multiple **interface types**: GigabitEthernet, Serial, Loopback
+- **Full mesh connectivity** requiring precise IP addressing
+- **OSPF routing** depends on correctly configured interfaces
+- Both **IPv4 and IPv6** dual-stack implementation
+- Demonstrates **point-to-point /30 subnetting** efficiency
+
+---
+
+## Router Interface Types Demonstrated
+
+### 1. Physical Interfaces
+
+#### GigabitEthernet Interfaces
+- **Higher bandwidth** (1000 Mbps)
+- Used for: Router-to-router core connections (R1-R2, R1-R3, R2-R3)
+- **Auto-negotiation** of speed and duplex
+- Example: R1 Gi0/0 connecting to R2
+
+#### Serial Interfaces
+- **Lower bandwidth**, commonly used for WAN links
+- Requires **clock rate** configuration on DCE side
+- Used for: R1-R4, R2-R4, R3-R4 connections
+- Example: R1 Se0/0/0 connecting to R4
+
+#### Loopback Interfaces
+- **Virtual/logical** interfaces
+- Never go down (always up/up)
+- Used for: OSPF Router IDs, management access
+- Example: R1 Lo0 (1.1.1.1/32)
+
+---
+
+## IP Addressing Scheme Analysis
+
+### Point-to-Point Link Addressing (/30 Subnets)
+
+Each router-to-router link uses a **/30 subnet** (4 addresses: network, 2 hosts, broadcast)
+
+| Link | Network | Usable IPs | Router 1 | Router 2 | Broadcast |
+|------|---------|------------|----------|----------|-----------|
+| R1-R2 | 10.0.1.0/30 | 2 | 10.0.1.1 | 10.0.1.2 | 10.0.1.3 |
+| R1-R3 | 10.0.2.0/30 | 2 | 10.0.2.1 | 10.0.2.2 | 10.0.2.3 |
+| R1-R4 | 10.0.3.0/30 | 2 | 10.0.3.1 | 10.0.3.2 | 10.0.3.3 |
+| R2-R3 | 10.0.4.0/30 | 2 | 10.0.4.1 | 10.0.4.2 | 10.0.4.3 |
+| R2-R4 | 10.0.5.0/30 | 2 | 10.0.5.1 | 10.0.5.2 | 10.0.5.3 |
+| R3-R4 | 10.0.6.0/30 | 2 | 10.0.6.1 | 10.0.6.2 | 10.0.6.3 |
+
+**Why /30?**
+- Most efficient for point-to-point links
+- Only 2 usable IPs needed (one per router)
+- Conserves IP address space
+- Standard for router-to-router connections
+
+### Loopback Addressing (/32 Host Routes)
+
+| Router | Loopback IP | Subnet Mask | Purpose |
+|--------|-------------|-------------|---------|
+| R1 | 1.1.1.1 | /32 (255.255.255.255) | OSPF Router ID |
+| R2 | 2.2.2.2 | /32 (255.255.255.255) | OSPF Router ID |
+| R3 | 3.3.3.3 | /32 (255.255.255.255) | OSPF Router ID |
+| R4 | 4.4.4.4 | /32 (255.255.255.255) | OSPF Router ID |
+
+**Why /32?**
+- Single host address
+- Loopbacks don't need a network
+- Best practice for router identification
+
+---
+
+## Complete Router Configurations
+
+### Router 1 (R1) Configuration
+
+```cisco
+! ============================================
+! ROUTER 1 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R1
+
+! --- IPv4 & IPv6 Routing ---
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface (Router ID) ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 1.1.1.1 255.255.255.255
+ ipv6 address 2001:db8:1::1/128
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R2) ---
+interface GigabitEthernet0/0
+ description ** Link to R2 **
+ ip address 10.0.1.1 255.255.255.252
+ ipv6 address 2001:db8:a::1/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R3) ---
+interface GigabitEthernet0/1
+ description ** Link to R3 **
+ ip address 10.0.2.1 255.255.255.252
+ ipv6 address 2001:db8:b::1/64
+ no shutdown
+
+! --- Serial 0/0/0 (to R4) ---
+interface Serial0/0/0
+ description ** WAN Link to R4 **
+ ip address 10.0.3.1 255.255.255.252
+ ipv6 address 2001:db8:c::1/64
+ clock rate 64000
+ bandwidth 64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 1.1.1.1
+ network 10.0.1.0 0.0.0.3 area 0
+ network 10.0.2.0 0.0.0.3 area 0
+ network 10.0.3.0 0.0.0.3 area 0
+ network 1.1.1.1 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 1.1.1.1
+
+! Enable OSPFv3 on interfaces
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/1
+ ipv6 ospf 1 area 0
+
+interface Serial0/0/0
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
+```
+
+### Router 2 (R2) Configuration
+
+```cisco
+! ============================================
+! ROUTER 2 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R2
+
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 2.2.2.2 255.255.255.255
+ ipv6 address 2001:db8:2::2/128
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R1) ---
+interface GigabitEthernet0/0
+ description ** Link to R1 **
+ ip address 10.0.1.2 255.255.255.252
+ ipv6 address 2001:db8:a::2/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R3) ---
+interface GigabitEthernet0/1
+ description ** Link to R3 **
+ ip address 10.0.4.1 255.255.255.252
+ ipv6 address 2001:db8:d::1/64
+ no shutdown
+
+! --- Serial 0/0/0 (to R4) ---
+interface Serial0/0/0
+ description ** WAN Link to R4 **
+ ip address 10.0.5.1 255.255.255.252
+ ipv6 address 2001:db8:e::1/64
+ clock rate 64000
+ bandwidth 64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 2.2.2.2
+ network 10.0.1.0 0.0.0.3 area 0
+ network 10.0.4.0 0.0.0.3 area 0
+ network 10.0.5.0 0.0.0.3 area 0
+ network 2.2.2.2 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 2.2.2.2
+
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/1
+ ipv6 ospf 1 area 0
+
+interface Serial0/0/0
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
+```
+
+### Router 3 (R3) Configuration
+
+```cisco
+! ============================================
+! ROUTER 3 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R3
+
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 3.3.3.3 255.255.255.255
+ ipv6 address 2001:db8:3::3/128
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R1) ---
+interface GigabitEthernet0/0
+ description ** Link to R1 **
+ ip address 10.0.2.2 255.255.255.252
+ ipv6 address 2001:db8:b::2/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R2) ---
+interface GigabitEthernet0/1
+ description ** Link to R2 **
+ ip address 10.0.4.2 255.255.255.252
+ ipv6 address 2001:db8:d::2/64
+ no shutdown
+
+! --- Serial 0/0/0 (to R4) ---
+interface Serial0/0/0
+ description ** WAN Link to R4 **
+ ip address 10.0.6.1 255.255.255.252
+ ipv6 address 2001:db8:f::1/64
+ clock rate 64000
+ bandwidth 64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 3.3.3.3
+ network 10.0.2.0 0.0.0.3 area 0
+ network 10.0.4.0 0.0.0.3 area 0
+ network 10.0.6.0 0.0.0.3 area 0
+ network 3.3.3.3 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 3.3.3.3
+
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/1
+ ipv6 ospf 1 area 0
+
+interface Serial0/0/0
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
+```
+
+### Router 4 (R4) Configuration
+
+```cisco
+! ============================================
+! ROUTER 4 CONFIGURATION
+! ============================================
+
+enable
+configure terminal
+hostname R4
+
+ip routing
+ipv6 unicast-routing
+
+! --- Loopback Interface ---
+interface Loopback0
+ description ** OSPF Router ID **
+ ip address 4.4.4.4 255.255.255.255
+ ipv6 address 2001:db8:4::4/128
+ no shutdown
+
+! --- Serial 0/0/0 (to R1) - DTE Side ---
+interface Serial0/0/0
+ description ** WAN Link to R1 **
+ ip address 10.0.3.2 255.255.255.252
+ ipv6 address 2001:db8:c::2/64
+ bandwidth 64
+ no shutdown
+
+! --- GigabitEthernet 0/0 (to R2) ---
+interface GigabitEthernet0/0
+ description ** Link to R2 **
+ ip address 10.0.5.2 255.255.255.252
+ ipv6 address 2001:db8:e::2/64
+ no shutdown
+
+! --- GigabitEthernet 0/1 (to R3) ---
+interface GigabitEthernet0/1
+ description ** Link to R3 **
+ ip address 10.0.6.2 255.255.255.252
+ ipv6 address 2001:db8:f::2/64
+ no shutdown
+
+! --- OSPF Configuration ---
+router ospf 1
+ router-id 4.4.4.4
+ network 10.0.3.0 0.0.0.3 area 0
+ network 10.0.5.0 0.0.0.3 area 0
+ network 10.0.6.0 0.0.0.3 area 0
+ network 4.4.4.4 0.0.0.0 area 0
+
+! --- OSPFv3 for IPv6 ---
+ipv6 router ospf 1
+ router-id 4.4.4.4
+
+interface Serial0/0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/0
+ ipv6 ospf 1 area 0
+
+interface GigabitEthernet0/1
+ ipv6 ospf 1 area 0
+
+interface Loopback0
+ ipv6 ospf 1 area 0
+
+end
+write memory
+```
+
+---
+
+## Key Configuration Concepts Explained
+
+### 1. Interface Descriptions
+```cisco
+interface GigabitEthernet0/0
+ description ** Link to R2 **
+```
+**Purpose:** Documentation and troubleshooting. Shows in `show` commands.
+
+### 2. Clock Rate (Serial Interfaces)
+```cisco
+interface Serial0/0/0
+ clock rate 64000
+```
+**Purpose:** Required on DCE side of serial connection. Sets timing for data transmission.
+
+### 3. Bandwidth Command
+```cisco
+interface Serial0/0/0
+ bandwidth 64
+```
+**Purpose:** Used by routing protocols (OSPF) to calculate best path. Doesn't actually limit speed.
+
+### 4. Subnet Masks
+```cisco
+ip address 10.0.1.1 255.255.255.252  ! /30 = 255.255.255.252
+ip address 1.1.1.1 255.255.255.255   ! /32 = 255.255.255.255
+```
+**Purpose:** Defines network boundaries and usable IP range.
+
+### 5. IPv6 Addressing
+```cisco
+ipv6 address 2001:db8:a::1/64
+```
+**Purpose:** Dual-stack support, future-proofing, global addressing.
+
+### 6. No Shutdown
+```cisco
+no shutdown
+```
+**Purpose:** Administratively enables the interface. Default state is "shutdown" on routers.
+
+---
+
+## Verification Commands & Expected Output
+
+### 1. Show IP Interface Brief
+```cisco
+R1# show ip interface brief
+```
+**Expected Output:**
+```
+Interface              IP-Address      OK? Method Status                Protocol
+GigabitEthernet0/0     10.0.1.1        YES manual up                    up
+GigabitEthernet0/1     10.0.2.1        YES manual up                    up
+Serial0/0/0            10.0.3.1        YES manual up                    up
+Loopback0              1.1.1.1         YES manual up                    up
+```
+**What to verify:**
+- All interfaces are "up/up"
+- Correct IP addresses assigned
+- Method shows "manual" for static configuration
+
+### 2. Show IPv6 Interface Brief
+```cisco
+R1# show ipv6 interface brief
+```
+**Expected Output:**
+```
+GigabitEthernet0/0     [up/up]
+    2001:DB8:A::1
+    FE80::1
+GigabitEthernet0/1     [up/up]
+    2001:DB8:B::1
+    FE80::1
+Serial0/0/0            [up/up]
+    2001:DB8:C::1
+    FE80::1
+Loopback0              [up/up]
+    2001:DB8:1::1
+    FE80::1
+```
+**What to verify:**
+- IPv6 addresses correctly assigned
+- Link-local addresses (FE80) automatically generated
+- All interfaces operational
+
+### 3. Show Interfaces [interface]
+```cisco
+R1# show interfaces GigabitEthernet0/0
+```
+**Key Information:**
+- Hardware type and MAC address
+- MTU size (default 1500 bytes)
+- Bandwidth and delay
+- Encapsulation type
+- Packet statistics (input/output)
+- Errors and collisions
+
+### 4. Show IP Route
+```cisco
+R1# show ip route
+```
+**Expected Output:**
+```
+Codes: C - connected, S - static, O - OSPF
+
+Gateway of last resort is not set
+
+     1.0.0.0/32 is subnetted, 1 subnets
+C       1.1.1.1 is directly connected, Loopback0
+     2.0.0.0/32 is subnetted, 1 subnets
+O       2.2.2.2 [110/2] via 10.0.1.2, 00:10:23, GigabitEthernet0/0
+     3.0.0.0/32 is subnetted, 1 subnets
+O       3.3.3.3 [110/2] via 10.0.2.2, 00:10:23, GigabitEthernet0/1
+     4.0.0.0/32 is subnetted, 1 subnets
+O       4.4.4.4 [110/65] via 10.0.3.2, 00:10:23, Serial0/0/0
+     10.0.0.0/8 is variably subnetted, 9 subnets, 2 masks
+C       10.0.1.0/30 is directly connected, GigabitEthernet0/0
+C       10.0.2.0/30 is directly connected, GigabitEthernet0/1
+C       10.0.3.0/30 is directly connected, Serial0/0/0
+O       10.0.4.0/30 [110/2] via 10.0.1.2, 00:10:23, GigabitEthernet0/0
+                     [110/2] via 10.0.2.2, 00:10:23, GigabitEthernet0/1
+```
+**What to verify:**
+- Connected (C) routes for directly attached networks
+- OSPF (O) routes for remote networks
+- Multiple paths for redundancy
+
+### 5. Show OSPF Neighbor
+```cisco
+R1# show ip ospf neighbor
+```
+**Expected Output:**
+```
+Neighbor ID     Pri   State           Dead Time   Address         Interface
+2.2.2.2           1   FULL/  -        00:00:39    10.0.1.2        GigabitEthernet0/0
+3.3.3.3           1   FULL/  -        00:00:38    10.0.2.2        GigabitEthernet0/1
+4.4.4.4           1   FULL/  -        00:00:37    10.0.3.2        Serial0/0/0
+```
+**What to verify:**
+- All neighbors in FULL state
+- Correct neighbor IDs (loopback addresses)
+- Appropriate interfaces listed
+
+### 6. Ping Tests
+
+**IPv4 Ping:**
+```cisco
+R1# ping 4.4.4.4
+```
+**Expected:** Success rate 100% (5/5)
+
+**IPv6 Ping:**
+```cisco
+R1# ping ipv6 2001:db8:4::4
+```
+**Expected:** Success rate 100% (5/5)
+
+### 7. Traceroute Tests
+```cisco
+R1# traceroute 4.4.4.4
+```
+**Purpose:** Shows path packets take through the network
+
+### 8. Show Running-Config Interface
+```cisco
+R1# show running-config interface GigabitEthernet0/0
+```
+**Purpose:** View complete interface configuration
+
+---
+
+## Testing Procedures for Video Demonstration
+
+### Test 1: Interface Status Verification
+**Commands:**
+```cisco
+show ip interface brief
+show ipv6 interface brief
+```
+**Expected Result:** All interfaces up/up with correct IPs
+
+### Test 2: Connectivity Tests
+**From R1:**
+```cisco
+ping 2.2.2.2    ! Test to R2 loopback
+ping 3.3.3.3    ! Test to R3 loopback
+ping 4.4.4.4    ! Test to R4 loopback
+ping ipv6 2001:db8:4::4  ! IPv6 test
+```
+**Expected Result:** 100% success rate
+
+### Test 3: Routing Verification
+**Commands:**
+```cisco
+show ip route
+show ip route ospf
+show ipv6 route
+```
+**Expected Result:** All networks learned via OSPF
+
+### Test 4: OSPF Neighbor Adjacency
+**Commands:**
+```cisco
+show ip ospf neighbor
+show ipv6 ospf neighbor
+```
+**Expected Result:** All 3 neighbors in FULL state
+
+### Test 5: Path Redundancy Test
+**Action:** Shutdown one interface
+```cisco
+R1(config)# interface GigabitEthernet0/0
+R1(config-if)# shutdown
+```
+**Verification:**
+```cisco
+show ip route
+ping 2.2.2.2
+traceroute 2.2.2.2
+```
+**Expected Result:** OSPF reroutes traffic through alternate path
+
+**Restore:**
+```cisco
+R1(config-if)# no shutdown
+```
+
+### Test 6: Interface Statistics
+**Commands:**
+```cisco
+show interfaces GigabitEthernet0/0
+show interfaces Serial0/0/0
+```
+**Check:** Packet counters, errors, bandwidth utilization
+
+---
+
+## Common Troubleshooting Scenarios
+
+### Problem 1: Interface Down/Down
+**Symptoms:** Interface shows "administratively down"
+```cisco
+GigabitEthernet0/0   unassigned   YES unset  administratively down down
+```
+**Solution:**
+```cisco
+interface GigabitEthernet0/0
+ no shutdown
+```
+
+### Problem 2: Interface Up/Down
+**Symptoms:** Line protocol down (layer 2 issue)
+```cisco
+GigabitEthernet0/0   10.0.1.1   YES manual up   down
+```
+**Possible Causes:**
+- Cable not connected
+- Speed/duplex mismatch
+- Encapsulation mismatch (serial links)
+
+**Solution:** Check physical connectivity and cable
+
+### Problem 3: No OSPF Adjacency
+**Symptoms:** Neighbors not appearing
+```cisco
+R1# show ip ospf neighbor
+(empty)
+```
+**Checks:**
+```cisco
+! Verify interface is in OSPF
+show ip ospf interface
+
+! Check OSPF configuration
+show run | section ospf
+
+! Verify network statements
+show ip protocols
+```
+**Common Issues:**
+- Incorrect network statement
+- Area mismatch
+- Hello/dead timer mismatch
+- Authentication mismatch
+
+### Problem 4: Wrong Subnet Configuration
+**Symptoms:** Cannot ping neighbor on same link
+**Verification:**
+```cisco
+show ip interface GigabitEthernet0/0
+```
+Check if IP and subnet mask result in same network
+
+**Example Issue:**
+- R1: 10.0.1.1/30 (network 10.0.1.0)
+- R2: 10.0.1.5/30 (network 10.0.1.4) ❌ Different network!
+
+**Solution:** Correct IP addressing
+
+### Problem 5: Serial Interface Clock Rate Missing
+**Symptoms:** Serial link up/down
+**Verification:**
+```cisco
+show controllers Serial0/0/0
+```
+Look for "DCE" indicator
+
+**Solution:** Add clock rate on DCE side
+```cisco
+interface Serial0/0/0
+ clock rate 64000
+```
+
+---
+
+## Advanced Concepts (Bonus Points)
+
+### 1. Secondary IP Addresses
+Multiple IPs on one interface:
+```cisco
+interface GigabitEthernet0/0
+ ip address 10.0.1.1 255.255.255.252
+ ip address 192.168.1.1 255.255.255.0 secondary
+```
+**Use case:** Migration scenarios, multiple subnets
+
+### 2. IP Helper Address (DHCP Relay)
+```cisco
+interface GigabitEthernet0/0
+ ip helper-address 192.168.50.12
+```
+**Purpose:** Forward DHCP broadcasts to DHCP server
+
+### 3. Interface Shutdown for Security
+```cisco
+interface range FastEthernet0/1-24
+ shutdown
+```
+**Purpose:** Disable unused ports to prevent unauthorized access
+
+### 4. Bandwidth vs Speed
+**Bandwidth:** Logical value used by routing protocols
+**Speed:** Actual interface speed
+
+```cisco
+interface Serial0/0/0
+ bandwidth 64        ! OSPF uses this for metric
+ speed 64000         ! Not available on packet tracer serial
+ clock rate 64000    ! Actual line speed
+```
+
+---
+
+## Configuration Backup Commands
+
+### Save All Router Configs
+```cisco
+! On each router
+copy running-config startup-config
+
+! Or
+write memory
+
+! Or
+wr
+```
+
+### Export Configuration (Packet Tracer)
+File → Export → Select all routers → Save
+
+### View Complete Configuration
+```cisco
+show running-config
+show startup-config
+```
+
+---
+
+## Summary
+
+### What Was Demonstrated:
+✅ **3 interface types:** GigabitEthernet, Serial, Loopback  
+✅ **Dual-stack:** IPv4 and IPv6 on all interfaces  
+✅ **Efficient addressing:** /30 subnets for point-to-point  
+✅ **Dynamic routing:** OSPF using interface IPs  
+✅ **Redundancy:** Multiple paths between routers  
+✅ **Verification:** Complete testing and troubleshooting  
+✅ **Documentation:** Interface descriptions and comments  
+
+### Key Learning Points:
+1. Proper IP addressing is critical for network functionality
+2. Different interface types serve different purposes
+3. Subnet masks determine network boundaries
+4. Loopbacks provide stable reference points
+5. Interface status (up/down) indicates layer 1/2 health
+6. Routing protocols depend on correctly configured interfaces
+7. IPv6 provides dual-stack future-proofing
+
+---
+
+## Files in Repository
+- `mesh_topology.pkt` - Packet Tracer file
+- `R1_config.txt` - Router 1 complete configuration
+- `R2_config.txt` - Router 2 complete configuration
+- `R3_config.txt` - Router 3 complete configuration
+- `R4_config.txt` - Router 4 complete configuration
+- `screenshots/` - Interface verification screenshots
+- `README.md` - This documentation
+
+---
+
+**Configured by:** [Your Name]  
+**Date:** October 2025  
+**Part II Feature:** Router Interface IP Configuration & Management
 
 ## How to Use This Documentation
 
