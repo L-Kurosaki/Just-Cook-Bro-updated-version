@@ -1,0 +1,48 @@
+# Miscellaneous
+*.class
+*.log
+*.lock
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Flutter/Dart/Pub
+.dart_tool/
+.packages
+.pub/
+build/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.flx
+ios/Flutter/app.zip
+ios/Flutter/flutter_assets/
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+android/local.properties
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android Studio
+.gradle
+local.properties
+.idea
+.settings
+app/release
+
+# Visual Studio Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
