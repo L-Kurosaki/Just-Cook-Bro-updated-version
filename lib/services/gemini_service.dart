@@ -13,16 +13,10 @@ String _cleanKey(String value) {
   return value;
 }
 
-// Fetch specific keys for different functionalities to prevent rate limiting and token abuse
-String _getKey(String envVar) {
-  final key = String.fromEnvironment(envVar);
-  if (key.isNotEmpty && !key.startsWith('\$')) return _cleanKey(key);
-  
-  // Fallback to a default key if specific one isn't provided
-  final fallback = String.fromEnvironment('GEMINI_API_KEY');
+String _getValidKey(String primary, String fallback) {
+  if (primary.isNotEmpty && !primary.startsWith('\$')) return _cleanKey(primary);
   if (fallback.isNotEmpty && !fallback.startsWith('\$')) return _cleanKey(fallback);
-  
-  return ''; 
+  return '';
 }
 
 class GeminiService {
@@ -38,29 +32,35 @@ class GeminiService {
   late final String _chatKey;
 
   GeminiService() {
+    const fallbackKey = String.fromEnvironment('GEMINI_API_KEY');
+
     // 1. Recipe Generation (Complex Reasoning -> gemini-1.5-pro)
-    _recipeKey = _getKey('GEMINI_API_KEY_RECIPE');
+    const rawRecipeKey = String.fromEnvironment('GEMINI_API_KEY_RECIPE');
+    _recipeKey = _getValidKey(rawRecipeKey, fallbackKey);
     _recipeModel = GenerativeModel(
       model: 'gemini-1.5-pro', 
       apiKey: _recipeKey,
     );
     
     // 2. Vision/Image Analysis (Fast Multimodal -> gemini-1.5-flash)
-    _visionKey = _getKey('GEMINI_API_KEY_VISION');
+    const rawVisionKey = String.fromEnvironment('GEMINI_API_KEY_VISION');
+    _visionKey = _getValidKey(rawVisionKey, fallbackKey);
     _visionModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
       apiKey: _visionKey,
     );
 
     // 3. Location/Shop Finding (Fast Text -> gemini-1.5-flash)
-    _locationKey = _getKey('GEMINI_API_KEY_LOCATION');
+    const rawLocationKey = String.fromEnvironment('GEMINI_API_KEY_LOCATION');
+    _locationKey = _getValidKey(rawLocationKey, fallbackKey);
     _locationModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
       apiKey: _locationKey,
     );
 
     // 4. Chat/Cooking Help (Fast Text -> gemini-1.5-flash)
-    _chatKey = _getKey('GEMINI_API_KEY_CHAT');
+    const rawChatKey = String.fromEnvironment('GEMINI_API_KEY_CHAT');
+    _chatKey = _getValidKey(rawChatKey, fallbackKey);
     _chatModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
       apiKey: _chatKey,
