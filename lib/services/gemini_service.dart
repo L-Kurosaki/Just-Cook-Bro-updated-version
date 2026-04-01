@@ -32,33 +32,38 @@ class GeminiService {
   late final GenerativeModel _locationModel; // Uses Flash for fast text
   late final GenerativeModel _chatModel; // Uses Flash for fast text
 
+  late final String _recipeKey;
+  late final String _visionKey;
+  late final String _locationKey;
+  late final String _chatKey;
+
   GeminiService() {
     // 1. Recipe Generation (Complex Reasoning -> gemini-1.5-pro)
-    final recipeKey = _getKey('GEMINI_API_KEY_RECIPE');
+    _recipeKey = _getKey('GEMINI_API_KEY_RECIPE');
     _recipeModel = GenerativeModel(
       model: 'gemini-1.5-pro', 
-      apiKey: recipeKey,
+      apiKey: _recipeKey,
     );
     
     // 2. Vision/Image Analysis (Fast Multimodal -> gemini-1.5-flash)
-    final visionKey = _getKey('GEMINI_API_KEY_VISION');
+    _visionKey = _getKey('GEMINI_API_KEY_VISION');
     _visionModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
-      apiKey: visionKey,
+      apiKey: _visionKey,
     );
 
     // 3. Location/Shop Finding (Fast Text -> gemini-1.5-flash)
-    final locationKey = _getKey('GEMINI_API_KEY_LOCATION');
+    _locationKey = _getKey('GEMINI_API_KEY_LOCATION');
     _locationModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
-      apiKey: locationKey,
+      apiKey: _locationKey,
     );
 
     // 4. Chat/Cooking Help (Fast Text -> gemini-1.5-flash)
-    final chatKey = _getKey('GEMINI_API_KEY_CHAT');
+    _chatKey = _getKey('GEMINI_API_KEY_CHAT');
     _chatModel = GenerativeModel(
       model: 'gemini-1.5-flash', 
-      apiKey: chatKey,
+      apiKey: _chatKey,
     );
   }
 
@@ -104,7 +109,7 @@ class GeminiService {
   // --- Recipe Generation ---
 
   Future<Recipe> generateRecipeFromText(String prompt, {UserProfile? profile}) async {
-    if (_recipeModel.apiKey.isEmpty) {
+    if (_recipeKey.isEmpty) {
       throw Exception("Recipe API Key is missing. Check 'GEMINI_API_KEY_RECIPE' environment.");
     }
 
@@ -155,7 +160,7 @@ class GeminiService {
   // --- SAFETY CHECK & VISION ---
 
   Future<void> _validateImageIsFood(Uint8List imageBytes) async {
-    if (_visionModel.apiKey.isEmpty) throw Exception("Vision API Key is missing.");
+    if (_visionKey.isEmpty) throw Exception("Vision API Key is missing.");
 
     final prompt = "Is this image a food item, a dish, or a cooking ingredient? Answer only YES or NO.";
     final content = [
@@ -246,7 +251,7 @@ class GeminiService {
   // --- Real Location Services (In-App) ---
 
   Future<List<Map<String, String>>> findShopsNearby(String ingredient) async {
-    if (_locationModel.apiKey.isEmpty) return [];
+    if (_locationKey.isEmpty) return [];
     
     // 1. Get Coordinates
     try {
@@ -301,7 +306,7 @@ class GeminiService {
   }
 
   Future<String> getCookingHelp(String instruction) async {
-    if (_chatModel.apiKey.isEmpty) return 'Cooking assistant offline.';
+    if (_chatKey.isEmpty) return 'Cooking assistant offline.';
     try {
       final response = await _chatModel.generateContent([
         Content.text('Cooking step: "$instruction". Give a short, funny or encouraging tip (max 15 words).')
