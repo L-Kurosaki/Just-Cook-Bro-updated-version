@@ -1,0 +1,417 @@
+import 'package:flutter/material.dart' hide Step;
+import 'package:lucide_icons/lucide_icons.dart';
+import '../models.dart';
+import '../services/gemini_service.dart';
+import '../services/storage_service.dart';
+import '../services/revenue_cat_service.dart';
+import '../services/supabase_service.dart';
+import 'cooking_mode_screen.dart';
+import '../widgets/review_section.dart';
+import '../widgets/paywall.dart';
+
+class RecipeDetailScreen extends StatefulWidget {
+  final Recipe recipe;
+
+  const RecipeDetailScreen({super.key, required this.recipe});
+
+  @override
+  State<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
+}
+
+class _RecipeDetailScreenState extends State<RecipeDetailScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  late Recipe _recipe;
+  final GeminiService _gemini = GeminiService();
+  final StorageService _storage = StorageService();
+  final RevenueCatService _rc = RevenueCatService();
+  final SupabaseService _supabase = SupabaseService();
+  
+  UserProfile? _userProfile;
+  bool _isPremium = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _recipe = widget.recipe;
+    _tabController = TabController(length: 2, vsync: this);
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final p = await _storage.getProfile();
+    final premium = await _rc.isPremium();
+    setState(() {
+      _userProfile = p;
+      _isPremium = premium;
+    });
+  }
+
+  Future<void> _findStores(String ingredient) async {
+    showModalBottomSheet(
+      context: context, 
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        height: 400,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Find '$ingredient' Nearby", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            const Text("Locating best shops...", style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 20),
+            Expanded(
+              child: FutureBuilder<List<Map<String, String>>>(
+                future: _gemini.findShopsNearby(ingredient),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Color(0xFFC9A24D)));
+                  }
+                  if (snapshot.hasError) return const Text("Could not find location data.");
+                  
+                  final shops = snapshot.data ?? [];
+                  return ListView.separated(
+                    itemCount: shops.length,
+                    separatorBuilder: (_,__) => const Divider(),
+                    itemBuilder: (ctx, i) {
+                       return ListTile(
+                         leading: Container(
+                           padding: const EdgeInsets.all(8),
+                           decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(8)),
+                           child: const Icon(LucideIcons.store, color: Color(0xFFC9A24D)),
+                         ),
+                         title: Text(shops[i]['name']!),
+                         subtitle: Text(shops[i]['vicinity']!),
+                         trailing: const Icon(LucideIcons.mapPin),
+                       );
+                    },
+                  );
+                },
+              ),
+            )
+          ],
+        ),
+      )
+    );
+  }
+
+  Future<void> _deleteRecipe() async {
+    // 1. Check if user is allowed to delete (Premium check)
+    if (!_isPremium) {
+      int deleteCount = 0; // Simplified for demo
+      if (deleteCount >= 1) {
+         Navigator.push(context, MaterialPageRoute(builder: (_) => const Paywall()));
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Free limit reached. Upgrade to delete more.')));
+         return;
+      }
+    }
+
+    // 2. Perform Deletion
+    try {
+      // Local clean up (legacy)
+      await _storage.deleteRecipe(_recipe.id);
+      
+      // Cloud clean up (Critical Fix)
+      await _supabase.deleteRecipe(_recipe.id);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Recipe deleted from Cloud.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deletion failed: $e')));
+    }
+  }
+
+  Future<void> _shareToCommunity() async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Post to Community Feed"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Share this recipe with everyone!"),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: "Add a caption (e.g. 'Turned out great!')",
+                border: OutlineInputBorder()
+              ),
+              maxLines: 2,
+            )
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                await _supabase.shareRecipeToCommunity(_recipe, controller.text);
+                if(mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Posted successfully!")));
+                }
+              } catch(e) {
+                if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+              }
+            }, 
+            child: const Text("Post")
+          )
+        ],
+      )
+    );
+  }
+
+  Future<void> _addToFolder() async {
+    final isPremium = await _rc.isPremium();
+    if (!isPremium) {
+       if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const Paywall()));
+       return;
+    }
+
+    final folders = await _storage.getFolders();
+    if (!mounted) return;
+    
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+           const Text("Move to Folder", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+           const SizedBox(height: 10),
+           ...folders.map((f) => ListTile(
+             title: Text(f.name),
+             leading: const Icon(LucideIcons.folder),
+             onTap: () async {
+               final updated = _recipe.copyWith(folderId: f.id);
+               // Update local and cloud
+               await _storage.saveRecipe(updated);
+               await _supabase.saveRecipe(updated);
+               setState(() => _recipe = updated);
+               Navigator.pop(ctx);
+             },
+           ))
+        ],
+      )
+    );
+  }
+
+  bool _hasSafetyWarning() {
+    if (_recipe.allergens.isNotEmpty) return true;
+    if (_userProfile == null) return false;
+    for (var allergy in _userProfile!.allergies) {
+      if (_recipe.allergens.map((a) => a.toLowerCase()).contains(allergy.toLowerCase())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _startCooking() async {
+    if (_recipe.authorId != null && _recipe.authorId != _supabase.userId) {
+       _supabase.notifyAuthor(_recipe.authorId!, 'cook', "is cooking your '${_recipe.title}'!");
+    }
+
+    if (!mounted) return;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => CookingModeScreen(recipe: _recipe)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    bool unsafe = _hasSafetyWarning();
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 300,
+            pinned: true,
+            backgroundColor: Colors.black,
+            actions: [
+               IconButton(icon: const Icon(LucideIcons.share2), onPressed: _shareToCommunity),
+               IconButton(icon: const Icon(LucideIcons.folderInput), onPressed: _addToFolder),
+               IconButton(icon: const Icon(LucideIcons.trash2, color: Colors.red), onPressed: _deleteRecipe),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_recipe.imageUrl != null)
+                    Image.network(
+                      _recipe.imageUrl!, 
+                      fit: BoxFit.cover,
+                      errorBuilder: (ctx, err, stack) => Container(color: Colors.grey[800], child: const Center(child: Icon(LucideIcons.chefHat, color: Colors.white, size: 48))),
+                    ),
+                  Container(color: Colors.black.withOpacity(0.3)),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (unsafe)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 20),
+                      padding: const EdgeInsets.all(16),
+                      width: double.infinity,
+                      decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.red, width: 2)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(children: [
+                            Icon(LucideIcons.alertTriangle, color: Colors.red, size: 24),
+                            SizedBox(width: 8),
+                            Text("ALLERGY ALERT", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 18))
+                          ]),
+                          const SizedBox(height: 8),
+                          Text(
+                            "This recipe contains: ${_recipe.allergens.join(', ')}",
+                            style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.w600)
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  Text(_recipe.title, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  
+                  if (_recipe.sourceUrl != null && _recipe.sourceUrl!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Row(
+                        children: [
+                           const Icon(LucideIcons.link, size: 14, color: Colors.blue),
+                           const SizedBox(width: 4),
+                           Expanded(child: Text("Source: ${_recipe.sourceUrl}", style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline), maxLines: 1, overflow: TextOverflow.ellipsis))
+                        ],
+                      ),
+                    )
+                  else if (_recipe.author != null)
+                     Text("by ${_recipe.author}", style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+
+                  const SizedBox(height: 8),
+                  Text(_recipe.description, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                  const SizedBox(height: 20),
+                  
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildInfoChip(LucideIcons.clock, _recipe.prepTime),
+                      _buildInfoChip(LucideIcons.flame, _recipe.cookTime),
+                      _buildInfoChip(LucideIcons.users, '${_recipe.servings} pp'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: const Color(0xFFC9A24D),
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: const Color(0xFFC9A24D),
+                    tabs: const [Tab(text: 'Ingredients'), Tab(text: 'Steps')],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // TAB VIEWS
+                  if (_tabController.index == 0) ...[
+                    // INGREDIENTS VIEW
+                    ..._recipe.ingredients.map((ing) => ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      leading: Container(
+                        width: 60, height: 60,
+                        decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: ing.imageUrl != null 
+                              ? Image.network(
+                                  ing.imageUrl!, 
+                                  fit: BoxFit.cover, 
+                                  errorBuilder: (context, error, stackTrace) {
+                                    // FALLBACK FOR BROKEN IMAGES
+                                    return const Center(child: Icon(LucideIcons.carrot, color: Colors.grey));
+                                  }
+                                )
+                              : const Center(child: Icon(LucideIcons.carrot, color: Colors.grey)),
+                        ),
+                      ),
+                      title: Text(ing.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      subtitle: Text(ing.amount),
+                      trailing: IconButton(
+                        icon: const Icon(LucideIcons.mapPin, color: Color(0xFFC9A24D)),
+                        onPressed: () => _findStores(ing.name),
+                      ),
+                    )),
+                  ] else ...[
+                     // STEPS VIEW
+                     ..._recipe.steps.asMap().entries.map((entry) => ListTile(
+                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                       leading: CircleAvatar(backgroundColor: const Color(0xFF2E2E2E), radius: 14, child: Text('${entry.key + 1}', style: const TextStyle(fontSize: 14, color: Color(0xFFC9A24D)))),
+                       title: Text(entry.value.instruction, style: const TextStyle(height: 1.4)),
+                       subtitle: entry.value.tip != null ? Text('Tip: ${entry.value.tip}', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500)) : null,
+                     ))
+                  ],
+
+                  const SizedBox(height: 40),
+                  ReviewSection(
+                    reviews: const [], 
+                    isPremium: _isPremium,
+                    onAddReview: (rating, comment) {
+                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Thanks for your review!")));
+                    }, 
+                  ),
+                  const SizedBox(height: 100),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          if (unsafe) {
+            showDialog(
+              context: context, 
+              builder: (ctx) => AlertDialog(
+                title: const Text("Safety Warning"),
+                content: Text("This recipe contains allergens: ${_recipe.allergens.join(', ')}. Please confirm you want to cook this."),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _startCooking();
+                    },
+                    child: const Text("I Understand", style: TextStyle(color: Colors.white))
+                  )
+                ],
+              )
+            );
+          } else {
+             _startCooking();
+          }
+        },
+        backgroundColor: unsafe ? Colors.red : const Color(0xFFC9A24D),
+        icon: const Icon(LucideIcons.chefHat, color: Colors.white),
+        label: const Text('Start Cooking', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildInfoChip(IconData icon, String label) {
+    return Row(children: [
+      Icon(icon, size: 16, color: const Color(0xFFC9A24D)),
+      const SizedBox(width: 6),
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+    ]);
+  }
+}

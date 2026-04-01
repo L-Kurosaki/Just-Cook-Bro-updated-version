@@ -1,0 +1,67 @@
+name: Build and Release to Google Play
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on version tags like v1.0.0
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0' # Adjust to your Flutter version
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          
+      - name: Create key.properties
+        run: |
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" > android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=upload-keystore.jks" >> android/key.properties
+
+      - name: Build Android App Bundle
+        run: |
+          flutter build appbundle --release \
+            --dart-define=GEMINI_API_KEY_RECIPE="${{ secrets.GEMINI_API_KEY_RECIPE }}" \
+            --dart-define=GEMINI_API_KEY_VISION="${{ secrets.GEMINI_API_KEY_VISION }}" \
+            --dart-define=GEMINI_API_KEY_LOCATION="${{ secrets.GEMINI_API_KEY_LOCATION }}" \
+            --dart-define=GEMINI_API_KEY_CHAT="${{ secrets.GEMINI_API_KEY_CHAT }}" \
+            --dart-define=RC_GOOGLE_KEY="${{ secrets.RC_GOOGLE_KEY }}" \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - name: Upload AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/app/outputs/bundle/release/app-release.aab
+
+      # Optional: Upload directly to Google Play Console
+      # - name: Upload to Google Play
+      #   uses: r0adkll/upload-google-play@v1
+      #   with:
+      #     serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+      #     packageName: com.yourcompany.justcookbro # Update with your package name
+      #     releaseFiles: build/app/outputs/bundle/release/app-release.aab
+      #     track: internal # Can be production, beta, alpha, internal
+      #     status: draft
