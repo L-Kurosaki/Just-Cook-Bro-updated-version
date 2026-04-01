@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Step;
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../models.dart';
 import '../services/gemini_service.dart';
@@ -242,10 +243,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> with SingleTick
                 fit: StackFit.expand,
                 children: [
                   if (_recipe.imageUrl != null)
-                    Image.network(
-                      _recipe.imageUrl!, 
+                    CachedNetworkImage(
+                      imageUrl: _recipe.imageUrl!, 
                       fit: BoxFit.cover,
-                      errorBuilder: (ctx, err, stack) => Container(color: Colors.grey[800], child: const Center(child: Icon(LucideIcons.chefHat, color: Colors.white, size: 48))),
+                      placeholder: (context, url) => Container(
+                        color: Colors.grey[900],
+                        child: const Center(child: CircularProgressIndicator(color: Colors.orange)),
+                      ),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[800], 
+                        child: const Center(child: Icon(LucideIcons.chefHat, color: Colors.white, size: 48)),
+                      ),
                     ),
                   Container(color: Colors.black.withOpacity(0.3)),
                 ],
@@ -332,13 +340,11 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> with SingleTick
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
                           child: ing.imageUrl != null 
-                              ? Image.network(
-                                  ing.imageUrl!, 
+                              ? CachedNetworkImage(
+                                  imageUrl: ing.imageUrl!, 
                                   fit: BoxFit.cover, 
-                                  errorBuilder: (context, error, stackTrace) {
-                                    // FALLBACK FOR BROKEN IMAGES
-                                    return const Center(child: Icon(LucideIcons.carrot, color: Colors.grey));
-                                  }
+                                  placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.orange, strokeWidth: 2)),
+                                  errorWidget: (context, url, error) => const Center(child: Icon(LucideIcons.carrot, color: Colors.grey)),
                                 )
                               : const Center(child: Icon(LucideIcons.carrot, color: Colors.grey)),
                         ),

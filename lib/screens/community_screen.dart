@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../models.dart';
 import '../services/supabase_service.dart';
@@ -225,7 +226,22 @@ class _CommunityScreenState extends State<CommunityScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (recipe.imageUrl != null)
-                  Image.network(recipe.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover),
+                  CachedNetworkImage(
+                    imageUrl: recipe.imageUrl!, 
+                    height: 200, 
+                    width: double.infinity, 
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      height: 200,
+                      color: Colors.grey[900],
+                      child: const Center(child: CircularProgressIndicator(color: Colors.orange)),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      height: 200,
+                      color: Colors.grey[900],
+                      child: const Center(child: Icon(LucideIcons.imageOff, color: Colors.grey)),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
