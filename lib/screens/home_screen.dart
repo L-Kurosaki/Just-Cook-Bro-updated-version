@@ -1,98 +1,104 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../models.dart';
-import '../services/supabase_service.dart';
 import '../services/storage_service.dart';
 import '../services/revenue_cat_service.dart';
-import 'cooking_mode_screen.dart';
+import '../services/supabase_service.dart';
 import 'recipe_detail_screen.dart';
+import 'add_recipe_screen.dart';
+import 'folder_manager_screen.dart';
+import '../widgets/logo.dart';
 import '../widgets/paywall.dart';
 
-class CommunityScreen extends StatefulWidget {
-  const CommunityScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<CommunityScreen> createState() => _CommunityScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _CommunityScreenState extends State<CommunityScreen> {
+class _HomeScreenState extends State<HomeScreen> {
+  // We now use Stream for real-time updates from Cloud
+  List<Folder> _folders = [];
+  String? _selectedFolderId;
+  String? _activeFilterTag;
+  String _userName = "Chef";
+  
+  final StorageService _storage = StorageService();
+  final RevenueCatService _rcService = RevenueCatService();
   final SupabaseService _supabase = SupabaseService();
-  final RevenueCatService _rc = RevenueCatService();
-  bool _isPremium = false;
 
   @override
   void initState() {
     super.initState();
-    _checkPremium();
+    _loadAuxData();
   }
 
-  Future<void> _checkPremium() async {
-    bool p = await _rc.isPremium();
-    if (mounted) setState(() => _isPremium = p);
+  Future<void> _loadAuxData() async {
+    // Folders are still local for now, can be migrated later if needed
+    final folders = await _storage.getFolders();
+    final name = await _supabase.getUserName();
+
+    if (mounted) {
+      setState(() {
+        _folders = folders;
+        _userName = name;
+      });
+    }
   }
 
-  Recipe _getRecipeFromPost(Map<String, dynamic> post) {
-    Recipe original = Recipe.fromJson(post['content']);
-    // Ensure we keep the public rating visible locally
-    return original.copyWith(
-      authorId: post['author_id'],
-      rating: post['rating'] // Sync the rating from the DB column
+  Future<void> _openFolderManager() async {
+    final isPremium = await _rcService.isPremium();
+    if (!isPremium) {
+       if (mounted) Navigator.push(context, MaterialPageRoute(builder: (_) => const Paywall()));
+       return;
+    }
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const FolderManagerScreen()));
+    _loadAuxData(); 
+  }
+
+  void _showFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Filter Recipes", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildFilterChip("All", null),
+                  _buildFilterChip("Vegan", "Vegan"),
+                  _buildFilterChip("Vegetarian", "Vegetarian"),
+                  _buildFilterChip("Keto", "Keto"),
+                  _buildFilterChip("Gluten-Free", "Gluten-Free"),
+                  _buildFilterChip("Spicy", "Spicy"),
+                  _buildFilterChip("Dessert", "Dessert"),
+                ],
+              )
+            ],
+          ),
+        );
+      }
     );
   }
 
-  Future<void> _saveRecipe(Map<String, dynamic> post) async {
-    try {
-      final recipe = _getRecipeFromPost(post);
-      
-      // FIX: Generate a NEW ID for the personal copy to avoid RLS violation (42501)
-      // We are creating a NEW row in the DB owned by the current user.
-      final myCopy = recipe.copyWith(
-        id: uuid.v4(), 
-        isPublic: false
-      );
-      
-      await _supabase.saveRecipe(myCopy);
-      
-      // Notify original author
-      if (recipe.authorId != null) {
-        await _supabase.notifyAuthor(recipe.authorId!, 'save', "saved your '${recipe.title}' recipe!");
-      }
-      
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved to your Cloud Cookbook!")));
-
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-    }
-  }
-
-  Future<void> _cookNow(Map<String, dynamic> post) async {
-    final recipe = _getRecipeFromPost(post);
-
-    if (recipe.authorId != null) {
-       _supabase.notifyAuthor(recipe.authorId!, 'cook', "is cooking your '${recipe.title}' right now!");
-    }
-
-    if (mounted) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => CookingModeScreen(recipe: recipe)));
-    }
-  }
-
-  void _showRatingModal(Map<String, dynamic> post) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => _RatingModal(
-        post: post, 
-        isPremium: _isPremium,
-        onSubmit: (rating, comment) async {
-          await _supabase.addCommentOrRating(post['id'].toString(), post['author_id'], rating, comment);
-          if (mounted) {
-            Navigator.pop(context);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Rating submitted!")));
-          }
-        }
-      )
+  Widget _buildFilterChip(String label, String? val) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: _activeFilterTag == val,
+      onSelected: (selected) {
+        setState(() => _activeFilterTag = selected ? val : null);
+        Navigator.pop(context);
+      },
+      selectedColor: const Color(0xFFC9A24D),
+      labelStyle: TextStyle(color: _activeFilterTag == val ? Colors.white : Colors.black),
     );
   }
 
@@ -101,178 +107,101 @@ class _CommunityScreenState extends State<CommunityScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Community Feed', style: TextStyle(color: Color(0xFF2E2E2E), fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Hi $_userName,', style: const TextStyle(color: Color(0xFF2E2E2E), fontWeight: FontWeight.bold, fontSize: 22)),
+            const Text('Your Cloud Cookbook.', style: TextStyle(color: Colors.grey, fontSize: 14)),
+          ],
+        ),
         actions: [
-          if (_isPremium)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
-              child: Icon(LucideIcons.zap, color: Colors.amber, size: 20),
-            )
+          IconButton(icon: const Icon(LucideIcons.filter, color: Color(0xFF2E2E2E)), onPressed: _showFilterSheet),
+          IconButton(icon: const Icon(LucideIcons.crown, color: Color(0xFFC9A24D)), onPressed: () {
+             Navigator.push(context, MaterialPageRoute(builder: (_) => const Paywall()));
+          }),
         ],
       ),
-      body: RefreshIndicator(
-        color: const Color(0xFFC9A24D),
-        onRefresh: () async {
-          setState(() {}); // Triggers FutureBuilder to reload
-        },
-        child: FutureBuilder<List<Map<String, dynamic>>>(
-          future: _supabase.getCommunityFeed(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: Color(0xFFC9A24D)));
-            }
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return ListView(
-                children: const [
-                   SizedBox(height: 100),
-                   Center(child: Text("No posts yet. Pull to refresh!", style: TextStyle(color: Colors.grey))),
-                ],
-              );
-            }
+      body: Column(
+        children: [
+          _buildFolderBar(),
+          Expanded(
+            child: StreamBuilder<List<Recipe>>(
+              stream: _supabase.getMyRecipesStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: Color(0xFFC9A24D)));
+                }
+                
+                // DATA PROCESSING
+                List<Recipe> recipes = snapshot.data ?? [];
+                
+                // Client-side filtering
+                if (_selectedFolderId != null) {
+                   recipes = recipes.where((r) => r.folderId == _selectedFolderId).toList();
+                }
+                if (_activeFilterTag != null) {
+                   recipes = recipes.where((r) => 
+                     r.tags.contains(_activeFilterTag) || r.title.contains(_activeFilterTag!)
+                   ).toList();
+                }
 
-            final posts = snapshot.data!;
+                if (recipes.isEmpty) {
+                  return _buildEmptyState();
+                }
 
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: posts.length,
-              itemBuilder: (context, index) {
-                final post = posts[index];
-                return _buildPostCard(post);
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: recipes.length,
+                  itemBuilder: (context, index) {
+                    return RecipeCard(recipe: recipes[index], onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipe: recipes[index])),
+                      );
+                    });
+                  },
+                );
               },
-            );
-          },
-        ),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFFC9A24D),
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const AddRecipeScreen()));
+        },
+        label: const Text('Add Recipe', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        icon: const Icon(LucideIcons.plus, color: Colors.white),
       ),
     );
   }
 
-  Widget _buildPostCard(Map<String, dynamic> post) {
-    final recipe = _getRecipeFromPost(post);
-    final caption = post['caption'] as String?;
-    final author = post['author_name'] as String? ?? 'Chef';
-    final isAuthorPremium = post['author_is_premium'] == true;
-    final date = DateTime.tryParse(post['created_at']) ?? DateTime.now();
-    
-    // Display average rating from DB if available
-    final rating = post['rating'] ?? 0;
+  Widget _buildFolderBar() {
+    final rootFolders = _folders.where((f) => f.parentId == null).toList();
+    final displayFolders = rootFolders.take(3).toList(); // Show a bit more
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))]
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      height: 50,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  backgroundColor: isAuthorPremium ? const Color(0xFFFFD700) : const Color(0xFFC9A24D),
-                  radius: 18,
-                  child: Text(author.isNotEmpty ? author[0].toUpperCase() : 'C', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          author, 
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold, 
-                            fontSize: 16,
-                            color: isAuthorPremium ? const Color(0xFFDAA520) : Colors.black
-                          )
-                        ),
-                        if (isAuthorPremium)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.verified, size: 14, color: Color(0xFFDAA520)),
-                          )
-                      ],
-                    ),
-                    Text("${date.hour}:${date.minute.toString().padLeft(2,'0')} • Today", style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                ),
-                const Spacer(),
-                if (rating > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(8)),
-                    child: Row(
-                      children: [
-                        const Icon(LucideIcons.star, size: 14, color: Color(0xFFC9A24D)),
-                        const SizedBox(width: 4),
-                        Text(rating.toString(), style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFC9A24D))),
-                      ],
-                    ),
-                  )
-              ],
-            ),
-          ),
+          _buildFolderChip(null, "All Recipes"),
+          ...displayFolders.map((f) => _buildFolderChip(f.id, f.name)),
           
-          // Image / Content
-          GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipe: recipe))),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (recipe.imageUrl != null)
-                  CachedNetworkImage(
-                    imageUrl: recipe.imageUrl!, 
-                    height: 200, 
-                    width: double.infinity, 
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      height: 200,
-                      color: Colors.grey[900],
-                      child: const Center(child: CircularProgressIndicator(color: Colors.orange)),
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      height: 200,
-                      color: Colors.grey[900],
-                      child: const Center(child: Icon(LucideIcons.imageOff, color: Colors.grey)),
-                    ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(recipe.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      if (caption != null && caption.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(caption, style: const TextStyle(color: Color(0xFF4B4B4B))),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Actions
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFF3F4F6)))
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildActionBtn(LucideIcons.star, "Rate", () => _showRatingModal(post)),
-                _buildActionBtn(LucideIcons.chefHat, "Cook", () => _cookNow(post), isPrimary: true),
-                _buildActionBtn(LucideIcons.bookmark, "Save", () => _saveRecipe(post)),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: ActionChip(
+              label: const Text("Folders"),
+              avatar: const Icon(LucideIcons.folderCog, size: 16, color: Colors.black),
+              onPressed: _openFolderManager,
+              backgroundColor: Colors.white,
+              side: const BorderSide(color: Colors.grey),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             ),
           )
         ],
@@ -280,23 +209,48 @@ class _CommunityScreenState extends State<CommunityScreen> {
     );
   }
 
-  Widget _buildActionBtn(IconData icon, String label, VoidCallback onTap, {bool isPrimary = false}) {
-    return InkWell(
-      onTap: onTap,
+  Widget _buildFolderChip(String? id, String label) {
+    final isSelected = _selectedFolderId == id;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: isSelected,
+        selectedColor: const Color(0xFFC9A24D),
+        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black),
+        backgroundColor: Colors.white,
+        side: isSelected ? BorderSide.none : const BorderSide(color: Colors.grey),
+        onSelected: (val) {
+          setState(() {
+            _selectedFolderId = id;
+          });
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
       child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Row(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon, 
-              size: 20, 
-              color: isPrimary ? const Color(0xFFC9A24D) : Colors.black87
+            const Logo(size: 80, showText: false),
+            const SizedBox(height: 24),
+            Text(
+              _activeFilterTag != null 
+                  ? 'No recipes for "$_activeFilterTag".' 
+                  : 'Cloud Cookbook Empty.', 
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2E2E2E))
             ),
-            const SizedBox(width: 6),
-            Text(label, style: TextStyle(
-              fontWeight: FontWeight.w600, 
-              color: isPrimary ? const Color(0xFFC9A24D) : Colors.black87
-            )),
+            const SizedBox(height: 8),
+            const Text(
+              "Add a recipe to sync it to your account forever.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       ),
@@ -304,81 +258,88 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 }
 
-class _RatingModal extends StatefulWidget {
-  final Map<String, dynamic> post;
-  final bool isPremium;
-  final Function(int, String?) onSubmit;
+class RecipeCard extends StatelessWidget {
+  final Recipe recipe;
+  final VoidCallback onTap;
 
-  const _RatingModal({required this.post, required this.isPremium, required this.onSubmit});
-
-  @override
-  State<_RatingModal> createState() => _RatingModalState();
-}
-
-class _RatingModalState extends State<_RatingModal> {
-  int _rating = 0;
-  final _commentController = TextEditingController();
+  const RecipeCard({super.key, required this.recipe, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 20, 
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text("Rate ${widget.post['author_name']}'s Recipe", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(5, (index) {
-              return IconButton(
-                icon: Icon(LucideIcons.star, size: 32, color: index < _rating ? const Color(0xFFC9A24D) : Colors.grey[300]),
-                onPressed: () => setState(() => _rating = index + 1),
-              );
-            }),
-          ),
-          const SizedBox(height: 16),
-          
-          if (widget.isPremium)
-            TextField(
-              controller: _commentController,
-              decoration: const InputDecoration(
-                hintText: "Write a comment...",
-                border: OutlineInputBorder(),
-                filled: true,
-                fillColor: Colors.white
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (recipe.imageUrl != null)
+              Image.network(
+                recipe.imageUrl!,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  height: 160,
+                  color: Colors.grey[300],
+                  child: const Center(child: Icon(LucideIcons.image, color: Colors.grey)),
+                ),
               ),
-              maxLines: 2,
-            )
-          else
-             Container(
-               padding: const EdgeInsets.all(12),
-               decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(8)),
-               child: const Row(
-                 children: [
-                   Icon(LucideIcons.lock, size: 16, color: Colors.grey),
-                   SizedBox(width: 8),
-                   Expanded(child: Text("Only Premium users can leave written comments. You can still rate!", style: TextStyle(color: Colors.grey, fontSize: 12))),
-                 ],
-               ),
-             ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          recipe.title,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2E2E2E)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (recipe.isPremium)
+                         Container(
+                           margin: const EdgeInsets.only(left: 8),
+                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                           decoration: BoxDecoration(color: const Color(0xFF2E2E2E), borderRadius: BorderRadius.circular(4)),
+                           child: const Text('PRO', style: TextStyle(color: Color(0xFFC9A24D), fontSize: 10, fontWeight: FontWeight.bold)),
+                         ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  
+                  if (recipe.author != null && recipe.author != 'AI Chef')
+                     Padding(
+                       padding: const EdgeInsets.only(bottom: 6.0),
+                       child: Text("by ${recipe.author}", style: const TextStyle(fontSize: 12, color: Color(0xFFC9A24D), fontStyle: FontStyle.italic)),
+                     ),
 
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _rating > 0 
-                ? () => widget.onSubmit(_rating, widget.isPremium ? _commentController.text : null)
-                : null,
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC9A24D)),
-              child: const Text("Submit", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  Text(recipe.description, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(LucideIcons.clock, size: 14, color: Color(0xFF6B6B6B)),
+                      const SizedBox(width: 4),
+                      Text(recipe.prepTime, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
+                      const SizedBox(width: 16),
+                      const Icon(LucideIcons.users, size: 14, color: Color(0xFF6B6B6B)),
+                      const SizedBox(width: 4),
+                      Text('${recipe.servings} pp', style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
+                    ],
+                  )
+                ],
+              ),
             ),
-          )
-        ],
+          ],
+        ),
       ),
     );
   }
