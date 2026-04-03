@@ -34,35 +34,35 @@ class GeminiService {
   GeminiService() {
     const fallbackKey = String.fromEnvironment('GEMINI_API_KEY');
 
-    // 1. Recipe Generation (Complex Reasoning -> gemini-1.5-pro)
+    // 1. Recipe Generation (Complex Reasoning -> gemini-3.1-pro-preview)
     const rawRecipeKey = String.fromEnvironment('GEMINI_API_KEY_RECIPE');
     _recipeKey = _getValidKey(rawRecipeKey, fallbackKey);
     _recipeModel = GenerativeModel(
-      model: 'gemini-1.5-pro', 
+      model: 'gemini-3.1-pro-preview', 
       apiKey: _recipeKey,
     );
     
-    // 2. Vision/Image Analysis (Fast Multimodal -> gemini-1.5-flash)
+    // 2. Vision/Image Analysis (Fast Multimodal -> gemini-3-flash-preview)
     const rawVisionKey = String.fromEnvironment('GEMINI_API_KEY_VISION');
     _visionKey = _getValidKey(rawVisionKey, fallbackKey);
     _visionModel = GenerativeModel(
-      model: 'gemini-1.5-flash', 
+      model: 'gemini-3-flash-preview', 
       apiKey: _visionKey,
     );
 
-    // 3. Location/Shop Finding (Fast Text -> gemini-1.5-flash)
+    // 3. Location/Shop Finding (Fast Text -> gemini-3-flash-preview)
     const rawLocationKey = String.fromEnvironment('GEMINI_API_KEY_LOCATION');
     _locationKey = _getValidKey(rawLocationKey, fallbackKey);
     _locationModel = GenerativeModel(
-      model: 'gemini-1.5-flash', 
+      model: 'gemini-3-flash-preview', 
       apiKey: _locationKey,
     );
 
-    // 4. Chat/Cooking Help (Fast Text -> gemini-1.5-flash)
+    // 4. Chat/Cooking Help (Fast Text -> gemini-3-flash-preview)
     const rawChatKey = String.fromEnvironment('GEMINI_API_KEY_CHAT');
     _chatKey = _getValidKey(rawChatKey, fallbackKey);
     _chatModel = GenerativeModel(
-      model: 'gemini-1.5-flash', 
+      model: 'gemini-3-flash-preview', 
       apiKey: _chatKey,
     );
   }
@@ -123,7 +123,9 @@ class GeminiService {
           'Credit the source domain in sourceUrl. ';
       sourceUrl = prompt;
     } else {
-      fullPrompt = 'Create a detailed cooking recipe for: "$prompt". ';
+      fullPrompt = 'Search your knowledge base for a REAL, existing recipe for: "$prompt". '
+          'DO NOT invent or generate a fake recipe. Find a real recipe from the internet. '
+          'You MUST include the original source link in the "sourceUrl" field and the original creator/website in the "author" field. ';
     }
 
     fullPrompt += _buildPreferencePrompt(profile);
@@ -132,7 +134,7 @@ class GeminiService {
     if (sourceUrl.isNotEmpty) {
       fullPrompt += 'Set "author" to the original creator if known, otherwise "Web Source". Set "sourceUrl" to "$sourceUrl". ';
     } else {
-      fullPrompt += 'Set "author" to "AI Chef". ';
+      fullPrompt += 'If you found a real recipe, set "author" to the website or creator name, and "sourceUrl" to the link. If you absolutely cannot find a real recipe, set "author" to "AI Chef". ';
     }
 
     try {

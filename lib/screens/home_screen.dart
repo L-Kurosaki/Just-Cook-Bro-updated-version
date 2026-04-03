@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../models.dart';
 import '../services/storage_service.dart';
@@ -23,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedFolderId;
   String? _activeFilterTag;
   String _userName = "Chef";
+  bool _isGridView = false;
   
   final StorageService _storage = StorageService();
   final RevenueCatService _rcService = RevenueCatService();
@@ -117,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          IconButton(icon: Icon(_isGridView ? LucideIcons.list : LucideIcons.layoutGrid, color: const Color(0xFF2E2E2E)), onPressed: () => setState(() => _isGridView = !_isGridView)),
           IconButton(icon: const Icon(LucideIcons.filter, color: Color(0xFF2E2E2E)), onPressed: _showFilterSheet),
           IconButton(icon: const Icon(LucideIcons.crown, color: Color(0xFFC9A24D)), onPressed: () {
              Navigator.push(context, MaterialPageRoute(builder: (_) => const Paywall()));
@@ -151,11 +154,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   return _buildEmptyState();
                 }
 
+                if (_isGridView) {
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 0.75,
+                    ),
+                    itemCount: recipes.length,
+                    itemBuilder: (context, index) {
+                      return RecipeCard(recipe: recipes[index], isGrid: true, onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipe: recipes[index])),
+                        );
+                      });
+                    },
+                  );
+                }
+
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: recipes.length,
                   itemBuilder: (context, index) {
-                    return RecipeCard(recipe: recipes[index], onTap: () {
+                    return RecipeCard(recipe: recipes[index], isGrid: false, onTap: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => RecipeDetailScreen(recipe: recipes[index])),
@@ -261,15 +285,16 @@ class _HomeScreenState extends State<HomeScreen> {
 class RecipeCard extends StatelessWidget {
   final Recipe recipe;
   final VoidCallback onTap;
+  final bool isGrid;
 
-  const RecipeCard({super.key, required this.recipe, required this.onTap});
+  const RecipeCard({super.key, required this.recipe, required this.onTap, this.isGrid = false});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: const Color(0xFFF3F4F6),
           borderRadius: BorderRadius.circular(16),
@@ -279,63 +304,72 @@ class RecipeCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (recipe.imageUrl != null)
-              Image.network(
-                recipe.imageUrl!,
-                height: 160,
+              CachedNetworkImage(
+                imageUrl: recipe.imageUrl!,
+                height: isGrid ? 100 : 160,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  height: 160,
-                  color: Colors.grey[300],
-                  child: const Center(child: Icon(LucideIcons.image, color: Colors.grey)),
+                placeholder: (context, url) => Container(
+                  height: isGrid ? 100 : 160,
+                  color: Colors.grey[900],
+                  child: const Center(child: CircularProgressIndicator(color: Colors.orange)),
+                ),
+                errorWidget: (context, url, error) => Container(
+                  height: isGrid ? 100 : 160,
+                  color: Colors.grey[900],
+                  child: const Center(child: Icon(LucideIcons.imageOff, color: Colors.grey)),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          recipe.title,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2E2E2E)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+            Expanded(
+              flex: isGrid ? 1 : 0,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            recipe.title,
+                            style: TextStyle(fontSize: isGrid ? 14 : 18, fontWeight: FontWeight.bold, color: const Color(0xFF2E2E2E)),
+                            maxLines: isGrid ? 2 : 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      if (recipe.isPremium)
-                         Container(
-                           margin: const EdgeInsets.only(left: 8),
-                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                           decoration: BoxDecoration(color: const Color(0xFF2E2E2E), borderRadius: BorderRadius.circular(4)),
-                           child: const Text('PRO', style: TextStyle(color: Color(0xFFC9A24D), fontSize: 10, fontWeight: FontWeight.bold)),
-                         ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  
-                  if (recipe.author != null && recipe.author != 'AI Chef')
-                     Padding(
-                       padding: const EdgeInsets.only(bottom: 6.0),
-                       child: Text("by ${recipe.author}", style: const TextStyle(fontSize: 12, color: Color(0xFFC9A24D), fontStyle: FontStyle.italic)),
-                     ),
+                        if (recipe.isPremium && !isGrid)
+                           Container(
+                             margin: const EdgeInsets.only(left: 8),
+                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                             decoration: BoxDecoration(color: const Color(0xFF2E2E2E), borderRadius: BorderRadius.circular(4)),
+                             child: const Text('PRO', style: TextStyle(color: Color(0xFFC9A24D), fontSize: 10, fontWeight: FontWeight.bold)),
+                           ),
+                      ],
+                    ),
+                    if (!isGrid) const SizedBox(height: 6),
+                    
+                    if (!isGrid && recipe.author != null && recipe.author != 'AI Chef')
+                       Padding(
+                         padding: const EdgeInsets.only(bottom: 6.0),
+                         child: Text("by ${recipe.author}", style: const TextStyle(fontSize: 12, color: Color(0xFFC9A24D), fontStyle: FontStyle.italic)),
+                       ),
 
-                  Text(recipe.description, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(LucideIcons.clock, size: 14, color: Color(0xFF6B6B6B)),
-                      const SizedBox(width: 4),
-                      Text(recipe.prepTime, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
-                      const SizedBox(width: 16),
-                      const Icon(LucideIcons.users, size: 14, color: Color(0xFF6B6B6B)),
-                      const SizedBox(width: 4),
-                      Text('${recipe.servings} pp', style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
-                    ],
-                  )
-                ],
+                    if (!isGrid) Text(recipe.description, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12), maxLines: 2, overflow: TextOverflow.ellipsis),
+                    if (!isGrid) const SizedBox(height: 12),
+                    if (!isGrid) Row(
+                      children: [
+                        const Icon(LucideIcons.clock, size: 14, color: Color(0xFF6B6B6B)),
+                        const SizedBox(width: 4),
+                        Text(recipe.prepTime, style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
+                        const SizedBox(width: 16),
+                        const Icon(LucideIcons.users, size: 14, color: Color(0xFF6B6B6B)),
+                        const SizedBox(width: 4),
+                        Text('${recipe.servings} pp', style: const TextStyle(color: Color(0xFF6B6B6B), fontSize: 12)),
+                      ],
+                    )
+                  ],
+                ),
               ),
             ),
           ],
